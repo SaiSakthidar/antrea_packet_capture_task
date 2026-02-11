@@ -1,24 +1,45 @@
----
 apiVersion: v1
 kind: Pod
 metadata:
   name: test-pod
-  namespace: default
-  labels:
-    app: test-pod
 spec:
   containers:
-  - name: nginx
-    image: nginx:latest
-    ports:
-    - containerPort: 80
-      name: http
-    command: ["/bin/sh"]
-    args:
-    - -c
+  - name: test-container
+    image: busybox
+    command: 
+    - "sh"
+    - "-c"
     - |
-      nginx &
+      echo "Starting network traffic generation..."
+      
+      # Generate DNS lookups
       while true; do
-        wget -q -O- http://localhost > /dev/null 2>&1
-        sleep 2
+        echo "=== DNS lookups ==="
+        nslookup kubernetes.default.svc.cluster.local
+        nslookup google.com || true
+        
+        echo "=== HTTP requests ==="
+        # Try to reach Kubernetes API (will generate HTTPS traffic)
+        wget -T 5 -O /dev/null https://kubernetes.default.svc.cluster.local/api || true
+        
+        # Try external HTTP request (will fail but generate traffic)
+        wget -T 5 -O /dev/null http://httpbin.org/ip || true
+        
+        echo "=== Ping tests ==="
+        # Ping other pods/services in cluster
+        ping -c 3 kubernetes.default.svc.cluster.local || true
+        
+        echo "=== TCP connections ==="
+        # Try to connect to common service ports
+        nc -z kubernetes.default.svc.cluster.local 443 || true
+        
+        echo "Sleeping for 30 seconds..."
+        sleep 30
       done
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
